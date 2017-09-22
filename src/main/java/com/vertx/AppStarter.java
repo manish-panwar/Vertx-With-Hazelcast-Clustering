@@ -26,7 +26,7 @@ import static io.vertx.core.impl.Arguments.require;
  * Only first node in cluster will put data in cache.
  * Access given below URL from node-2 or node-3.
  * <p>
- * http://localhost:8080/supriya
+ * http://localhost:8080/mars
  * http://localhost:8080/alien
  * <p>
  * <p>
@@ -106,9 +106,9 @@ public class AppStarter {
         // Write data in cache from node-1. Any new node added in cluster won't add any data in cache.
         if (hazelcastInstance.getCluster().getMembers().size() == 1) {
             Person person1 = new Person().setName("alien").setAge(30);
-            Person person2 = new Person().setName("supriya").setAge(38);
+            Person person2 = new Person().setName("mars").setAge(38);
             hazelcastInstance.getMap(CACHE_MAP_NAME).set("alien", person1);
-            hazelcastInstance.getMap(CACHE_MAP_NAME).set("supriya", person2);
+            hazelcastInstance.getMap(CACHE_MAP_NAME).set("mars", person2);
         }
     }
 
