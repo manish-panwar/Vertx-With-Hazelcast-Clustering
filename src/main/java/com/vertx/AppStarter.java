@@ -38,7 +38,7 @@ public class AppStarter {
     public static final String CACHE_MAP_NAME = "myMap";
 
     // TODO - Here you define the list of IP.
-    private static final List<String> clusterHosts = Arrays.asList("10.84.131.214", "10.84.131.115");
+    private static final List<String> clusterHosts = Arrays.asList("1.1.1.1", "2.2.2.2");
 
     public static void main(final String... args) throws SocketException {
         HazelcastClusterManager clusterManager = getClusterManager();
