@@ -10,11 +10,13 @@ import io.vertx.rxjava.core.Vertx;
 import io.vertx.rxjava.ext.web.Router;
 import io.vertx.spi.cluster.hazelcast.HazelcastClusterManager;
 
-import java.net.SocketException;
+import java.net.*;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static io.vertx.core.impl.Arguments.require;
+import static java.util.Collections.list;
 
 /**
  * Instructions :
@@ -38,23 +40,46 @@ public class AppStarter {
     public static final String CACHE_MAP_NAME = "myMap";
 
     // TODO - Here you define the list of IP.
-    private static final List<String> clusterHosts = Arrays.asList("1.1.1.1", "2.2.2.2");
+    private static final List<String> clusterHosts = Arrays.asList("10.84.131.214", "10.84.131.115");
 
-    public static void main(final String... args) throws SocketException {
+    public static void main(final String... args) throws SocketException, UnknownHostException {
+        String host = getHost();
         HazelcastClusterManager clusterManager = getClusterManager();
         VertxOptions options = new VertxOptions()
                 .setClusterManager(clusterManager)
-                .setClustered(true);
+                .setClustered(true)
+
+                // If there are multiple n/w interfaces, tell Vertx which one to use.
+                .setClusterHost(host)
+
+                // Vertx start a separate HTTP process on this port for event-bus communication
+                // via TCP, and Vertx use this port to send event-bus communication via TCP.
+                .setClusterPort(41232);
 
         Vertx.rxClusteredVertx(options).subscribe(vertx -> {
             HazelcastInstance hazelcastInstance = clusterManager.getHazelcastInstance();
             require(hazelcastInstance != null, "Hazelcast started successfully!");
             initializeCache();
-            startHttpServer(vertx);
+            startHttpServer(vertx, host);
+            registerVertxEventBusHandler(vertx);
         }, ex -> ex.printStackTrace());
     }
 
-    private static void startHttpServer(final Vertx vertx) {
+    private static String getHost() throws SocketException {
+        // Identify which n/w interface should be used by Vertx.
+        return list(NetworkInterface.getNetworkInterfaces()).stream()
+                .flatMap(ni -> list(ni.getInetAddresses()).stream())
+                .filter(address -> !address.isAnyLocalAddress())
+                .filter(address -> !address.isMulticastAddress())
+                .filter(address -> !address.isLoopbackAddress())
+                .filter(address -> !(address instanceof Inet6Address))
+                .map(InetAddress::getHostAddress)
+                .filter(host -> host.startsWith("10.84.131"))
+                .collect(Collectors.toList())
+                .get(0);
+    }
+
+    private static void startHttpServer(final Vertx vertx, final String currentHost) {
         Router router = Router.router(vertx);
 
         // Failure handler.
@@ -67,11 +92,21 @@ public class AppStarter {
         });
 
         // HTTP request handler.
-        router.get("/:key").handler(context -> context
-                .response()
-                .setChunked(true)
-                .write(readFromCache(context.request().getParam("key")))
-                .end());
+        router.get("/:key").handler(context -> {
+
+            // Get the query parameters.
+            String key = context.request().getParam("key");
+
+            // Demo of sending messages on event-bus.
+            vertx.eventBus().send("someHandler", key + ":: Host = " + currentHost);
+
+            // Write HTTP response back to browser.
+            context
+                    .response()
+                    .setChunked(true)
+                    .write(readFromCache(key))
+                    .end();
+        });
         vertx.createHttpServer()
                 .requestHandler(router::accept)
                 .listen(8080, "0.0.0.0");
@@ -107,8 +142,8 @@ public class AppStarter {
         if (hazelcastInstance.getCluster().getMembers().size() == 1) {
             Person person1 = new Person().setName("alien").setAge(30);
             Person person2 = new Person().setName("mars").setAge(38);
-            hazelcastInstance.getMap(CACHE_MAP_NAME).set("alien", person1);
-            hazelcastInstance.getMap(CACHE_MAP_NAME).set("mars", person2);
+            hazelcastInstance.getMap(CACHE_MAP_NAME).set(person1.getName(), person1);
+            hazelcastInstance.getMap(CACHE_MAP_NAME).set(person2.getName(), person2);
         }
     }
 
@@ -138,5 +173,11 @@ public class AppStarter {
                 .setMaxIdleSeconds(0)
                 .setStatisticsEnabled(false)
                 .setMaxSizeConfig(new MaxSizeConfig(0, MaxSizeConfig.MaxSizePolicy.USED_HEAP_SIZE));
+    }
+
+    private static void registerVertxEventBusHandler(final Vertx vertx) {
+        vertx.eventBus().consumer("someHandler", message -> {
+            System.out.println("Hello from :: " + message.body());
+        });
     }
 }
